@@ -1,0 +1,285 @@
+import tkinter as tk
+from tkinter import filedialog 
+import tkinter.messagebox as tm
+from tkinter import *
+import spacy
+import nltk
+from nltk.corpus import wordnet as wn
+from spacy.lang.en import English
+from nltk.stem.wordnet import WordNetLemmatizer
+from gensim.summarization import summarize
+from gensim.summarization import keywords
+from gensim import corpora
+import pickle
+import gensim
+import pyLDAvis.gensim
+import re
+import speech_recognition as sr
+import subprocess
+import os
+import uuid
+from punctuator import Punctuator
+p = Punctuator('Demo-Europarl-EN.pcl')
+
+datafile=""
+topicfile=""
+parser = English()
+def tokenize(text):
+    lda_tokens = []
+    tokens = parser(text)
+    for token in tokens:
+        if token.orth_.isspace():
+            continue
+        else:
+            lda_tokens.append(token.lower_)
+    return lda_tokens
+
+
+def get_lemma(word):
+    lemma = wn.morphy(word)
+    if lemma is None:
+        return word
+    else:
+        return lemma
+    
+
+def get_lemma2(word):
+    return WordNetLemmatizer().lemmatize(word)
+
+en_stop = set(nltk.corpus.stopwords.words('english'))
+
+
+def prepare_text_for_lda(text):
+    tokens = tokenize(text)
+    tokens = [token for token in tokens if len(token) > 4]
+    tokens = [token for token in tokens if token not in en_stop]
+    tokens = [get_lemma(token) for token in tokens]
+    return tokens
+    
+def AudioUpload(event=None):
+    global datafile
+    global topicfile
+    global datafile1
+    
+    filename = filedialog.askopenfilename()
+    print('Selected:', filename)
+    filename1="audio.wav"
+    command = [r"D:\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe","-y","-i", filename, filename1] #-y is used so that you can overwrite the audio file
+    subprocess.run(command,shell=True,capture_output=True)
+    r = sr.Recognizer()
+    
+    with sr.AudioFile(filename1) as source:
+        r.adjust_for_ambient_noise(source)
+        audio = r.record(source)
+                          
+    try:
+        datafile1=r.recognize_sphinx(audio)
+        print(type(datafile1))
+        print("Sphinx thinks you said " + datafile1)
+    except sr.UnknownValueError:
+        print("Sphinx could not understand audio")
+    except sr.RequestError as e:
+        print("Sphinx error; {0}".format(e))
+    
+    unique_filename = str(uuid.uuid4())
+    print(unique_filename)
+    f = open(unique_filename+".txt", "w+",encoding='utf-8')
+    print(type(datafile1))
+    v=f.write(datafile1)
+    f.close()
+    
+    text_data = []
+    summ=[]
+    f = open(unique_filename+".txt", "r",encoding='utf-8')
+    for line in f:
+        m=p.punctuate(line)
+        summ.append(summarize(m,ratio=0.05))
+        tokens = prepare_text_for_lda(line)
+        if True:
+            #print(tokens)
+            text_data.append(tokens) 
+    datafile=summ
+    dictionary = corpora.Dictionary(text_data)
+    corpus = [dictionary.doc2bow(text) for text in text_data]
+    pickle.dump(corpus, open('corpus.pkl', 'wb'))
+    dictionary.save('dictionary.gensim')
+    
+
+    NUM_TOPICS = 2
+    dictionary = gensim.corpora.Dictionary.load('dictionary.gensim')
+    corpus = pickle.load(open('corpus.pkl', 'rb'))
+    ldamodel = gensim.models.ldamodel.LdaModel(corpus, num_topics = NUM_TOPICS, id2word=dictionary, passes=15)
+    ldamodel.save('model3.gensim')
+    topicfile = ldamodel.print_topics(num_words=5)
+    print(topicfile)
+
+    lda = gensim.models.ldamodel.LdaModel.load('model3.gensim')
+    
+    # to extract words from string 
+    # using regex( findall() ) 
+  
+    test_string = topicfile[0][1]
+
+    # using regex( findall() ) 
+    # to extract words from string 
+    res = re.findall(r'\w+', test_string) 
+
+    # Python program to Remove all digits from a list of string 
+    from string import digits 
+
+    def remove(listr): 
+        listr = [''.join(x for x in i if x.isalpha()) for i in listr] 
+        return listr
+
+    # Driver code 
+
+    listr = res
+    v=remove(listr)
+    #print(v)
+
+    # Function to convert 
+    def listToString(s): 
+        str1 = "" 
+    
+    # traverse in the string 
+        for ele in s: 
+            str1 += ele+' '  
+        return str1 
+
+    # Driver code	 
+    s = v
+    topicfile=listToString(s)
+    print(topicfile)
+    
+    print(datafile[0])
+    #lda_display = pyLDAvis.gensim.prepare(lda, corpus, dictionary, sort_topics=False)
+    #pyLDAvis.display(lda_display)
+
+def UploadAction(event=None):
+    global datafile
+    global topicfile
+    filename = filedialog.askopenfilename()
+    print('Selected:', filename) 
+    
+    text_data = []
+    summ=[]
+    with open(filename, encoding="utf8") as f:
+        for line in f:
+            print("Hello",f)
+            summ.append(summarize(line,ratio=0.05))
+            tokens = prepare_text_for_lda(line)
+            if True:
+                #print(tokens)
+                text_data.append(tokens)
+    datafile=summ         
+    dictionary = corpora.Dictionary(text_data)
+    corpus = [dictionary.doc2bow(text) for text in text_data]
+    pickle.dump(corpus, open('corpus.pkl', 'wb'))
+    dictionary.save('dictionary.gensim')
+    
+
+    NUM_TOPICS = 2
+    dictionary = gensim.corpora.Dictionary.load('dictionary.gensim')
+    corpus = pickle.load(open('corpus.pkl', 'rb'))
+    ldamodel = gensim.models.ldamodel.LdaModel(corpus, num_topics = NUM_TOPICS, id2word=dictionary, passes=15)
+    ldamodel.save('model3.gensim')
+    topicfile = ldamodel.print_topics(num_words=5)
+    print(topicfile)
+
+    lda = gensim.models.ldamodel.LdaModel.load('model3.gensim')
+    
+    # to extract words from string using regex( findall() )
+    test_string = topicfile[0][1]
+
+    # using regex( findall() ) to extract words from string 
+    res = re.findall(r'\w+', test_string) 
+
+    # printing result 
+    #print ("The list of words is : " + str(res)) 
+
+    # Python program to Remove all 
+    # digits from a list of string 
+    from string import digits 
+
+    def remove(listr): 
+        listr = [''.join(x for x in i if x.isalpha()) for i in listr] 
+        return listr
+
+    # Driver code 
+
+    listr = res
+    v=remove(listr)
+    #print(v)
+
+    # Function to convert 
+    def listToString(s): 
+
+    # initialize an empty string 
+        str1 = "" 
+    
+    # traverse in the string 
+        for ele in s: 
+            str1 += ele+' ' 
+        # return string 
+        return str1 
+
+    # Driver code	 
+    s = v
+    topicfile=listToString(s) 
+    print(topicfile)
+    
+    print(datafile[0])
+    #lda_display = pyLDAvis.gensim.prepare(lda, corpus, dictionary, sort_topics=False)
+    #pyLDAvis.display(lda_display)
+    
+def Display_function():
+    global topicfile
+    print(topicfile)
+    
+    textBox2.delete('1.0', END)
+    textBox2.insert(tk.END, topicfile)
+
+def Summary_function():
+    global datafile
+    print(datafile)
+    
+    textBox1.delete('1.0', END)
+    textBox1.insert(tk.END, datafile[0])
+
+window = tk.Tk()
+#window.geometry("200x200+30+30")
+window.state('zoomed')
+window.title("ARTICLE SUMMARISER")
+button1 = tk.Button(window, text='Upload Text File', command=UploadAction)
+button4 = tk.Button(window, text='Upload\nAudio/Video\nFile', command=AudioUpload)
+button2 = tk.Button(window, text='Topics', command=Display_function)
+button3 = tk.Button(window, text='Summarize', command=Summary_function)
+
+display = tk.Label(window)
+textBox2=Text(window, height=8, width=100)
+display.pack()
+o = tk.Label(window, text="Relevant Keywords")
+o.pack()
+o.place(x = 720, y = 40, width=125, height=50)
+
+display = tk.Label(window)
+textBox1=Text(window, height=13, width=100)
+display.pack()
+o = tk.Label(window, text="Summary of the topic")
+o.pack()
+o.place(x = 720, y = 340, width=150, height=50)
+
+textBox2.pack()
+textBox2.place(x = 300, y = 90)
+textBox1.pack()
+textBox1.place(x = 300, y= 390) 
+button1.pack()
+button1.place(x = 70, y = 100, width=120, height=50)
+button2.pack()
+button2.place(x = 720, y = 280, width=120, height=50)
+button3.pack()
+button3.place(x = 720, y = 680, width=120, height=50)
+button4.pack()
+button4.place(x= 70, y =180,width=120, height=80)
+   
+window.mainloop()

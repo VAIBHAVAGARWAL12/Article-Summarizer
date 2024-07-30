@@ -1,0 +1,43 @@
+Article Summarizer
+
+This projects aims to generate a text summary for audio, video and text files. 
+Uses Tkinter for UI
+Gensim for summarization
+Speaker Recognition using Scikit learn 
+
+This code is created in Jupyter Notebook Anaconda
+
+Run command !pip install 'library names' in Jupyter Notebook cell.
+ 
+The Following libraries are to be preinstalled using Jupyter Notebook 
+spacy
+nltk
+gensim
+pickle
+pyLDAvis
+re
+speech_recognition
+uuid
+python_speech_features
+sckit-learn
+SciPy
+punctuator
+pocket sphinx
+
+punctuator
+Download training dataset named as:'Demo-Europarl-EN.pcl'
+https://drive.google.com/drive/folders/0B7BsN5f2F1fZQnFsbzJ3TWxxMms
+and store in the root folder.
+
+pocket sphinx
+To obtain compatible Pocket sphinx binary follow the link:
+https://www.lfd.uci.edu/~gohlke/pythonlibs/#pocketsphinx
+
+In Anaconda Prompt run the following Command:
+python -m pip install 'binary filename'
+
+You also need to download ffmpeg in the computer from ffmpeg.org.
+There is a need to change a path in AudioUpload function command = [r"your_path_for_ffmpeg.exe","-y","-i", filename, filename1].
+
+We have given a text file named as "SummaryTestText.txt"
+And a Video file named as: "videoplayback"
