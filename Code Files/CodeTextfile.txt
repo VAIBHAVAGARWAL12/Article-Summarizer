@@ -1,285 +1,214 @@
 import tkinter as tk
-from tkinter import filedialog 
-import tkinter.messagebox as tm
-from tkinter import *
+from tkinter import filedialog, ttk, messagebox as tm
+from tkinter import Text, END
 import spacy
 import nltk
 from nltk.corpus import wordnet as wn
 from spacy.lang.en import English
-from nltk.stem.wordnet import WordNetLemmatizer
 from gensim.summarization import summarize
-from gensim.summarization import keywords
 from gensim import corpora
 import pickle
 import gensim
-import pyLDAvis.gensim
 import re
 import speech_recognition as sr
 import subprocess
 import os
 import uuid
 from punctuator import Punctuator
+
+# Initialize Punctuator
 p = Punctuator('Demo-Europarl-EN.pcl')
 
-datafile=""
-topicfile=""
+# Initialize NLP tools
 parser = English()
-def tokenize(text):
-    lda_tokens = []
-    tokens = parser(text)
-    for token in tokens:
-        if token.orth_.isspace():
-            continue
-        else:
-            lda_tokens.append(token.lower_)
-    return lda_tokens
-
-
-def get_lemma(word):
-    lemma = wn.morphy(word)
-    if lemma is None:
-        return word
-    else:
-        return lemma
-    
-
-def get_lemma2(word):
-    return WordNetLemmatizer().lemmatize(word)
-
 en_stop = set(nltk.corpus.stopwords.words('english'))
 
 
-def prepare_text_for_lda(text):
-    tokens = tokenize(text)
-    tokens = [token for token in tokens if len(token) > 4]
-    tokens = [token for token in tokens if token not in en_stop]
-    tokens = [get_lemma(token) for token in tokens]
-    return tokens
-    
-def AudioUpload(event=None):
-    global datafile
-    global topicfile
-    global datafile1
-    
-    filename = filedialog.askopenfilename()
-    print('Selected:', filename)
-    filename1="audio.wav"
-    command = [r"D:\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe","-y","-i", filename, filename1] #-y is used so that you can overwrite the audio file
-    subprocess.run(command,shell=True,capture_output=True)
-    r = sr.Recognizer()
-    
-    with sr.AudioFile(filename1) as source:
-        r.adjust_for_ambient_noise(source)
-        audio = r.record(source)
-                          
-    try:
-        datafile1=r.recognize_sphinx(audio)
-        print(type(datafile1))
-        print("Sphinx thinks you said " + datafile1)
-    except sr.UnknownValueError:
-        print("Sphinx could not understand audio")
-    except sr.RequestError as e:
-        print("Sphinx error; {0}".format(e))
-    
-    unique_filename = str(uuid.uuid4())
-    print(unique_filename)
-    f = open(unique_filename+".txt", "w+",encoding='utf-8')
-    print(type(datafile1))
-    v=f.write(datafile1)
-    f.close()
-    
-    text_data = []
-    summ=[]
-    f = open(unique_filename+".txt", "r",encoding='utf-8')
-    for line in f:
-        m=p.punctuate(line)
-        summ.append(summarize(m,ratio=0.05))
-        tokens = prepare_text_for_lda(line)
-        if True:
-            #print(tokens)
-            text_data.append(tokens) 
-    datafile=summ
-    dictionary = corpora.Dictionary(text_data)
-    corpus = [dictionary.doc2bow(text) for text in text_data]
-    pickle.dump(corpus, open('corpus.pkl', 'wb'))
-    dictionary.save('dictionary.gensim')
-    
+class FileProcessor:
+    def __init__(self):
+        self.datafile = ""
+        self.topicfile = ""
+        self.summary_ratio = 0.1  # Default summarization ratio
+        self.num_keywords = 5  # Default number of keywords
+        self.full_text = ""  # Store the full text for re-summarization
+        self.tokens = []  # Store tokens for re-extracting topics
 
-    NUM_TOPICS = 2
-    dictionary = gensim.corpora.Dictionary.load('dictionary.gensim')
-    corpus = pickle.load(open('corpus.pkl', 'rb'))
-    ldamodel = gensim.models.ldamodel.LdaModel(corpus, num_topics = NUM_TOPICS, id2word=dictionary, passes=15)
-    ldamodel.save('model3.gensim')
-    topicfile = ldamodel.print_topics(num_words=5)
-    print(topicfile)
+    def set_summary_ratio(self, ratio):
+        self.summary_ratio = float(ratio)
 
-    lda = gensim.models.ldamodel.LdaModel.load('model3.gensim')
-    
-    # to extract words from string 
-    # using regex( findall() ) 
-  
-    test_string = topicfile[0][1]
+    def set_num_keywords(self, num):
+        self.num_keywords = int(num)
 
-    # using regex( findall() ) 
-    # to extract words from string 
-    res = re.findall(r'\w+', test_string) 
+    def tokenize(self, text):
+        lda_tokens = []
+        tokens = parser(text)
+        for token in tokens:
+            if not token.orth_.isspace():
+                lda_tokens.append(token.lower_)
+        return lda_tokens
 
-    # Python program to Remove all digits from a list of string 
-    from string import digits 
+    def get_lemma(self, word):
+        lemma = wn.morphy(word)
+        return lemma if lemma else word
 
-    def remove(listr): 
-        listr = [''.join(x for x in i if x.isalpha()) for i in listr] 
-        return listr
+    def prepare_text_for_lda(self, text):
+        tokens = self.tokenize(text)
+        tokens = [token for token in tokens if len(token) > 4 and token not in en_stop]
+        tokens = [self.get_lemma(token) for token in tokens]
+        return tokens
 
-    # Driver code 
+    def summarize_text(self, text):
+        if len(text) < 1000:
+            raise ValueError("Text too short for summarization")
+        return summarize(text, ratio=self.summary_ratio)
 
-    listr = res
-    v=remove(listr)
-    #print(v)
+    def extract_topics(self, text):
+        self.tokens = self.prepare_text_for_lda(text)  # Store tokens for re-extraction
+        dictionary = corpora.Dictionary([self.tokens])
+        corpus = [dictionary.doc2bow(self.tokens)]
+        ldamodel = gensim.models.ldamodel.LdaModel(corpus, num_topics=2, id2word=dictionary, passes=15)
+        topics = ldamodel.print_topics(num_words=self.num_keywords)  # Use self.num_keywords
+        return self.format_topics(topics)
 
-    # Function to convert 
-    def listToString(s): 
-        str1 = "" 
-    
-    # traverse in the string 
-        for ele in s: 
-            str1 += ele+' '  
-        return str1 
+    def format_topics(self, topics):
+        test_string = topics[0][1]
+        res = re.findall(r'\w+', test_string)
+        res = [''.join(x for x in i if x.isalpha()) for i in res]
+        return ' '.join(res)
 
-    # Driver code	 
-    s = v
-    topicfile=listToString(s)
-    print(topicfile)
-    
-    print(datafile[0])
-    #lda_display = pyLDAvis.gensim.prepare(lda, corpus, dictionary, sort_topics=False)
-    #pyLDAvis.display(lda_display)
+    def process_text_file(self, filename):
+        try:
+            with open(filename, encoding="utf8") as f:
+                self.full_text = ' '.join(line.strip() for line in f if line.strip())
+            return self.full_text
+        except Exception as e:
+            raise ValueError(f"Error reading file: {e}")
 
-def UploadAction(event=None):
-    global datafile
-    global topicfile
-    filename = filedialog.askopenfilename()
-    print('Selected:', filename) 
-    
-    text_data = []
-    summ=[]
-    with open(filename, encoding="utf8") as f:
-        for line in f:
-            print("Hello",f)
-            summ.append(summarize(line,ratio=0.05))
-            tokens = prepare_text_for_lda(line)
-            if True:
-                #print(tokens)
-                text_data.append(tokens)
-    datafile=summ         
-    dictionary = corpora.Dictionary(text_data)
-    corpus = [dictionary.doc2bow(text) for text in text_data]
-    pickle.dump(corpus, open('corpus.pkl', 'wb'))
-    dictionary.save('dictionary.gensim')
-    
+    def process_audio_file(self, filename):
+        try:
+            filename1 = "audio.wav"
+            command = [r"D:\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe", "-y", "-i", filename, filename1]
+            subprocess.run(command, shell=True, capture_output=True)
+            r = sr.Recognizer()
+            with sr.AudioFile(filename1) as source:
+                r.adjust_for_ambient_noise(source)
+                audio = r.record(source)
+            self.full_text = p.punctuate(r.recognize_sphinx(audio))
+            return self.full_text
+        except Exception as e:
+            raise ValueError(f"Error processing audio: {e}")
 
-    NUM_TOPICS = 2
-    dictionary = gensim.corpora.Dictionary.load('dictionary.gensim')
-    corpus = pickle.load(open('corpus.pkl', 'rb'))
-    ldamodel = gensim.models.ldamodel.LdaModel(corpus, num_topics = NUM_TOPICS, id2word=dictionary, passes=15)
-    ldamodel.save('model3.gensim')
-    topicfile = ldamodel.print_topics(num_words=5)
-    print(topicfile)
 
-    lda = gensim.models.ldamodel.LdaModel.load('model3.gensim')
-    
-    # to extract words from string using regex( findall() )
-    test_string = topicfile[0][1]
+class Application(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("ARTICLE SUMMARISER")
+        self.state('zoomed')
+        self.file_processor = FileProcessor()
+        self.create_widgets()
 
-    # using regex( findall() ) to extract words from string 
-    res = re.findall(r'\w+', test_string) 
+    def create_widgets(self):
+        # Buttons
+        self.button1 = tk.Button(self, text='Upload Text File', command=self.upload_text)
+        self.button1.grid(row=0, column=0, padx=10, pady=10)
 
-    # printing result 
-    #print ("The list of words is : " + str(res)) 
+        self.button4 = tk.Button(self, text='Upload\nAudio/Video\nFile', command=self.upload_audio)
+        self.button4.grid(row=1, column=0, padx=10, pady=10)
 
-    # Python program to Remove all 
-    # digits from a list of string 
-    from string import digits 
+        self.button2 = tk.Button(self, text='Topics', command=self.display_topics)
+        self.button2.grid(row=2, column=0, padx=10, pady=10)
 
-    def remove(listr): 
-        listr = [''.join(x for x in i if x.isalpha()) for i in listr] 
-        return listr
+        self.button3 = tk.Button(self, text='Summarize', command=self.display_summary)
+        self.button3.grid(row=3, column=0, padx=10, pady=10)
 
-    # Driver code 
+        # Summary Ratio Slider
+        self.ratio_label = tk.Label(self, text="Summarization Ratio:")
+        self.ratio_label.grid(row=4, column=0, padx=10, pady=10)
+        self.ratio_slider = ttk.Scale(self, from_=0.05, to=0.5, command=self.set_summary_ratio)
+        self.ratio_slider.set(0.1)
+        self.ratio_slider.grid(row=5, column=0, padx=10, pady=10)
 
-    listr = res
-    v=remove(listr)
-    #print(v)
+        # Number of Keywords Entry
+        self.keywords_label = tk.Label(self, text="Number of Keywords:")
+        self.keywords_label.grid(row=6, column=0, padx=10, pady=10)
+        self.keywords_entry = tk.Entry(self)
+        self.keywords_entry.insert(0, "5")
+        self.keywords_entry.grid(row=7, column=0, padx=10, pady=10)
 
-    # Function to convert 
-    def listToString(s): 
+        # Text Boxes
+        self.textBox2 = Text(self, height=8, width=100)
+        self.textBox2.grid(row=0, column=1, rowspan=4, padx=10, pady=10)
 
-    # initialize an empty string 
-        str1 = "" 
-    
-    # traverse in the string 
-        for ele in s: 
-            str1 += ele+' ' 
-        # return string 
-        return str1 
+        self.textBox1 = Text(self, height=13, width=100)
+        self.textBox1.grid(row=5, column=1, rowspan=4, padx=10, pady=10)
 
-    # Driver code	 
-    s = v
-    topicfile=listToString(s) 
-    print(topicfile)
-    
-    print(datafile[0])
-    #lda_display = pyLDAvis.gensim.prepare(lda, corpus, dictionary, sort_topics=False)
-    #pyLDAvis.display(lda_display)
-    
-def Display_function():
-    global topicfile
-    print(topicfile)
-    
-    textBox2.delete('1.0', END)
-    textBox2.insert(tk.END, topicfile)
+        # Labels
+        self.keywords_label = tk.Label(self, text="Relevant Keywords")
+        self.keywords_label.grid(row=0, column=2, padx=10, pady=10)
 
-def Summary_function():
-    global datafile
-    print(datafile)
-    
-    textBox1.delete('1.0', END)
-    textBox1.insert(tk.END, datafile[0])
+        self.summary_label = tk.Label(self, text="Summary of the topic")
+        self.summary_label.grid(row=5, column=2, padx=10, pady=10)
 
-window = tk.Tk()
-#window.geometry("200x200+30+30")
-window.state('zoomed')
-window.title("ARTICLE SUMMARISER")
-button1 = tk.Button(window, text='Upload Text File', command=UploadAction)
-button4 = tk.Button(window, text='Upload\nAudio/Video\nFile', command=AudioUpload)
-button2 = tk.Button(window, text='Topics', command=Display_function)
-button3 = tk.Button(window, text='Summarize', command=Summary_function)
+    def set_summary_ratio(self, value):
+        self.file_processor.set_summary_ratio(value)
 
-display = tk.Label(window)
-textBox2=Text(window, height=8, width=100)
-display.pack()
-o = tk.Label(window, text="Relevant Keywords")
-o.pack()
-o.place(x = 720, y = 40, width=125, height=50)
+    def set_num_keywords(self):
+        try:
+            num = self.keywords_entry.get()
+            self.file_processor.set_num_keywords(num)
+        except ValueError:
+            tm.showerror("Error", "Invalid number of keywords")
 
-display = tk.Label(window)
-textBox1=Text(window, height=13, width=100)
-display.pack()
-o = tk.Label(window, text="Summary of the topic")
-o.pack()
-o.place(x = 720, y = 340, width=150, height=50)
+    def upload_text(self):
+        filename = filedialog.askopenfilename()
+        if not filename:
+            return
+        try:
+            full_text = self.file_processor.process_text_file(filename)
+            summary = self.file_processor.summarize_text(full_text)
+            topics = self.file_processor.extract_topics(full_text)
+            self.file_processor.datafile = [summary]
+            self.file_processor.topicfile = topics
+            tm.showinfo("Success", "File processed successfully!")
+        except Exception as e:
+            tm.showerror("Error", str(e))
 
-textBox2.pack()
-textBox2.place(x = 300, y = 90)
-textBox1.pack()
-textBox1.place(x = 300, y= 390) 
-button1.pack()
-button1.place(x = 70, y = 100, width=120, height=50)
-button2.pack()
-button2.place(x = 720, y = 280, width=120, height=50)
-button3.pack()
-button3.place(x = 720, y = 680, width=120, height=50)
-button4.pack()
-button4.place(x= 70, y =180,width=120, height=80)
-   
-window.mainloop()
+    def upload_audio(self):
+        filename = filedialog.askopenfilename()
+        if not filename:
+            return
+        try:
+            full_text = self.file_processor.process_audio_file(filename)
+            summary = self.file_processor.summarize_text(full_text)
+            topics = self.file_processor.extract_topics(full_text)
+            self.file_processor.datafile = [summary]
+            self.file_processor.topicfile = topics
+            tm.showinfo("Success", "Audio processed successfully!")
+        except Exception as e:
+            tm.showerror("Error", str(e))
+
+    def display_topics(self):
+        self.set_num_keywords()  # Update number of keywords
+        try:
+            # Re-extract topics with the updated number of keywords
+            topics = self.file_processor.extract_topics(self.file_processor.full_text)
+            self.file_processor.topicfile = topics
+            self.textBox2.delete('1.0', END)
+            self.textBox2.insert(tk.END, self.file_processor.topicfile)
+        except Exception as e:
+            tm.showerror("Error", str(e))
+
+    def display_summary(self):
+        try:
+            # Re-summarize with the updated ratio
+            summary = self.file_processor.summarize_text(self.file_processor.full_text)
+            self.file_processor.datafile = [summary]
+            self.textBox1.delete('1.0', END)
+            self.textBox1.insert(tk.END, self.file_processor.datafile[0])
+        except Exception as e:
+            tm.showerror("Error", str(e))
+
+
+if __name__ == "__main__":
+    app = Application()
+    app.mainloop()
